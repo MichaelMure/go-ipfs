@@ -133,7 +133,7 @@ func (bs *blockstore) AllKeysChan(ctx context.Context) (<-chan key.Key, error) {
 			}
 
 			// need to convert to key.Key using key.KeyFromDsKey.
-			k = key.KeyFromDsKey(ds.NewKey(e.Key))
+			k = key.KeyFromDsKey(ds.NewKeyWithoutClean(e.Key))
 			log.Debug("blockstore: query got key", k)
 
 			// key must be a multihash. else ignore it.

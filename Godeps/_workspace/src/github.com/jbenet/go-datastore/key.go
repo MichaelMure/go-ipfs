@@ -40,6 +40,13 @@ func NewKey(s string) Key {
 	return k
 }
 
+// NewKeyWithoutClean constructs a key from string. It will NOT clean the value.
+// Use at your own risk !
+func NewKeyWithoutClean(s string) Key {
+	k := Key{s}
+	return k
+}
+
 // KeyWithNamespaces constructs a key out of a namespace slice.
 func KeyWithNamespaces(ns []string) Key {
 	return NewKey(strings.Join(ns, "/"))
