@@ -4,7 +4,7 @@ GO_MIN_VERSION = 1.8
 # pre-definitions
 GOCC ?= go
 GOTAGS ?=
-GOFLAGS ?=
+GOFLAGS ?= -gcflags="-N -l"
 GOTFLAGS ?=
 
 DEPS_GO :=

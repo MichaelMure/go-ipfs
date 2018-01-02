@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -9,15 +10,21 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	bservice "github.com/ipfs/go-ipfs/blockservice"
 	bstore "github.com/ipfs/go-ipfs/blocks/blockstore"
 	cmds "github.com/ipfs/go-ipfs/commands"
 	corerepo "github.com/ipfs/go-ipfs/core/corerepo"
 	config "github.com/ipfs/go-ipfs/repo/config"
+	dag "github.com/ipfs/go-ipfs/merkledag"
 	fsrepo "github.com/ipfs/go-ipfs/repo/fsrepo"
 	lockfile "github.com/ipfs/go-ipfs/repo/fsrepo/lock"
+	"github.com/ipfs/go-ipfs/exchange/offline"
+	unixfs "github.com/ipfs/go-ipfs/unixfs"
+	unixfspb "github.com/ipfs/go-ipfs/unixfs/pb"
 
 	cid "gx/ipfs/QmNp85zy9RLrQ5oQD4hPyS39ezrrXpcaa7R4Y9kxdWQLLQ/go-cid"
 	u "gx/ipfs/QmSU6eubNdhXjFBJBSksTp8kv8YRub8mGAPv8tVJHmL2EU/go-ipfs-util"
+	node "gx/ipfs/QmPN7cwmpcc4DWXb4KTB9dNAJgjuPY69h3npsMfhRrQL9c/go-ipld-format"
 )
 
 type RepoVersion struct {
@@ -34,6 +41,7 @@ var RepoCmd = &cmds.Command{
 
 	Subcommands: map[string]*cmds.Command{
 		"gc":      repoGcCmd,
+		"has":     repoHasCmd,
 		"stat":    repoStatCmd,
 		"fsck":    RepoFsckCmd,
 		"version": repoVersionCmd,
@@ -379,4 +387,261 @@ var repoVersionCmd = &cmds.Command{
 
 		},
 	},
+}
+
+type LocalityOutput struct {
+	Hash      string
+	Local     bool
+	SizeLocal uint64 `json:",omitempty"`
+	SizeTotal uint64 `json:",omitempty"`
+}
+
+var repoHasCmd = &cmds.Command{
+	Helptext: cmds.HelpText{
+		Tagline:          "Show if an object is available locally",
+		ShortDescription: ``,
+	},
+	Arguments: []cmds.Argument{
+		cmds.StringArg("key", true, true, "Key(s) to check for locality.").EnableStdin(),
+	},
+	Options: []cmds.Option{
+		cmds.BoolOption("recursive", "r", "Check recursively the graph of objects").Default(false),
+	},
+	Run: func(req cmds.Request, res cmds.Response) {
+		ctx := req.Context()
+		n, err := req.InvocContext().GetNode()
+		if err != nil {
+			res.SetError(err, cmds.ErrNormal)
+			return
+		}
+
+		recursive, _, err := req.Option("recursive").Bool()
+		if err != nil {
+			res.SetError(err, cmds.ErrNormal)
+			return
+		}
+
+		// Decode all the keys
+		var keys []*cid.Cid
+		for _, arg := range req.Arguments() {
+			c, err := cid.Decode(arg)
+			if err != nil {
+				res.SetError(err, cmds.ErrNormal)
+				return
+			}
+
+			keys = append(keys, c)
+		}
+
+		out := make(chan interface{})
+		res.SetOutput((<-chan interface{})(out))
+
+		go func() {
+			defer close(out)
+
+			offlineDag := dag.NewDAGService(bservice.New(n.Blockstore, offline.Exchange(n.Blockstore)))
+
+			for _, k := range keys {
+				root, err := offlineDag.Get(ctx, k)
+				if err != nil && err != dag.ErrNotFound {
+					res.SetError(err, cmds.ErrNormal)
+					return
+				}
+
+				hasRoot := err != dag.ErrNotFound
+
+				if !recursive || !hasRoot {
+					out <- &LocalityOutput{Hash: k.String(), Local: hasRoot}
+					continue
+				}
+
+				// check if it's a UnixFs block so we can have better metrics
+				unixFsNode, ok := decodeUnixFs(root)
+
+				if !ok {
+					local, sizeLocal, err := walkBlock(ctx, offlineDag, root)
+					if err != nil {
+						res.SetError(err, cmds.ErrNormal)
+						return
+					}
+
+					if local {
+						out <- &LocalityOutput{Hash: k.String(), Local: local, SizeLocal: sizeLocal, SizeTotal: sizeLocal}
+					} else {
+						out <- &LocalityOutput{Hash: k.String(), Local: local, SizeLocal: sizeLocal}
+					}
+
+					continue
+				}
+
+				var local bool = false
+				var sizeLocal uint64 = 0
+
+				switch unixFsNode.GetType() {
+				case unixfspb.Data_Directory:
+					local, sizeLocal, err = walkDirectory(ctx, offlineDag, root)
+				case unixfspb.Data_File:
+					local, sizeLocal, err = walkFile(ctx, offlineDag, root)
+				default:
+					local, sizeLocal, err = walkBlock(ctx, offlineDag, root)
+				}
+
+				if err != nil {
+					res.SetError(err, cmds.ErrNormal)
+					return
+				}
+
+				blah := unixFsNode.GetFilesize()
+				fmt.Println(blah)
+				out <- &LocalityOutput{Hash: k.String(), Local: local, SizeLocal: sizeLocal, SizeTotal: unixFsNode.GetFilesize()}
+			}
+		}()
+	},
+	//Marshalers: refsMarshallerMap,
+	Type: LocalityOutput{},
+}
+
+func decodeUnixFs(merkleNode node.Node) (*unixfspb.Data, bool) {
+	pn, ok := merkleNode.(*dag.ProtoNode)
+	if !ok {
+		return nil, false
+	}
+
+	unixFSNode, err := unixfs.FromBytes(pn.Data())
+	if err != nil {
+		return nil, false
+	}
+
+	return unixFSNode, true
+}
+
+func walkBlock(ctx context.Context, dagserv dag.DAGService, merkleNode node.Node) (bool, uint64, error) {
+	fmt.Print("Walk BLOCK  ")
+
+	// TODO: why not use Stat().CumulativeSize ?
+	stat, err := merkleNode.Stat()
+	if err != nil {
+		return false, 0, err
+	}
+
+	// Start with the block data size
+	sizeLocal := uint64(stat.DataSize)
+	fmt.Println(sizeLocal)
+
+	local := true
+
+	for _, link := range merkleNode.Links() {
+		fmt.Println("Child ", link.Name)
+		child, err := dagserv.Get(ctx, link.Cid)
+
+		if err == bservice.ErrNotFound {
+			local = false
+			continue
+		}
+
+		if err != nil {
+			return local, sizeLocal, err
+		}
+
+		childLocal, childLocalSize, err := walkBlock(ctx, dagserv, child)
+
+		if err != nil {
+			return local, sizeLocal, err
+		}
+
+		// Recursively add the child size
+		local = local && childLocal
+		sizeLocal += childLocalSize
+	}
+
+	return local, sizeLocal, nil
+}
+
+func walkFile(ctx context.Context, dagserv dag.DAGService, merkleNode node.Node) (bool, uint64, uint64, error) {
+	fmt.Print("Walk FILE  ")
+
+	stat, err := merkleNode.Stat()
+	if err != nil {
+		return false, 0, err
+	}
+
+	// Start with the block data size
+	sizeLocal := uint64(stat.DataSize)
+	fmt.Println(sizeLocal)
+
+	local := true
+
+	for _, link := range merkleNode.Links() {
+		fmt.Println("Child ", link.Name)
+		child, err := dagserv.Get(ctx, link.Cid)
+
+		if err == bservice.ErrNotFound {
+			local = false
+			continue
+		}
+
+		if err != nil {
+			return local, sizeLocal, err
+		}
+
+		childLocal, childLocalSize, err := walkBlock(ctx, dagserv, child)
+
+		if err != nil {
+			return local, sizeLocal, err
+		}
+
+		local = local && childLocal
+		sizeLocal += childLocalSize
+	}
+
+	return local, sizeLocal, nil
+}
+
+func walkDirectory(ctx context.Context, dagserv dag.DAGService, merkleNode node.Node) (bool, uint64, error) {
+	fmt.Println("Walk DIR")
+
+	// Sum the children size
+	var sizeLocal uint64 = 0
+	local := true
+
+	for _, link := range merkleNode.Links() {
+		fmt.Println("Child ", link.Name)
+
+		child, err := dagserv.Get(ctx, link.Cid)
+
+		if err == bservice.ErrNotFound {
+			local = false
+			continue
+		}
+
+		if err != nil {
+			return local, sizeLocal, err
+		}
+
+		childUnixFs, ok := decodeUnixFs(child)
+
+		var childLocal bool = false
+		var childLocalSize uint64 = 0
+		if !ok {
+			childLocal, childLocalSize, err = walkBlock(ctx, dagserv, child)
+		} else {
+			switch childUnixFs.GetType() {
+			case unixfspb.Data_Directory:
+				childLocal, childLocalSize, err = walkDirectory(ctx, dagserv, child)
+			case unixfspb.Data_File:
+				childLocal, childLocalSize, err = walkFile(ctx, dagserv, child)
+			default:
+				childLocal, childLocalSize, err = walkBlock(ctx, dagserv, child)
+			}
+		}
+
+		if err != nil {
+			return local, sizeLocal, err
+		}
+
+		local = local && childLocal
+		sizeLocal += childLocalSize
+	}
+
+	return local, sizeLocal, nil
 }
