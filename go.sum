@@ -11,6 +11,8 @@ github.com/Kubuxu/go-os-helper v0.0.1 h1:EJiD2VUQyh5A9hWJLmc6iWg6yIcJ7jpBcwC8GMG
 github.com/Kubuxu/go-os-helper v0.0.1/go.mod h1:N8B+I7vPCT80IcP58r50u4+gEEcsZETFUpAzWW2ep1Y=
 github.com/Kubuxu/gocovmerge v0.0.0-20161216165753-7ecaa51963cd h1:HNhzThEtZW714v8Eda8sWWRcu9WSzJC+oCyjRjvZgRA=
 github.com/Kubuxu/gocovmerge v0.0.0-20161216165753-7ecaa51963cd/go.mod h1:bqoB8kInrTeEtYAwaIXoSRqdwnjQmFhsfusnzyui6yY=
+github.com/MichaelMure/go-ipfs-config v0.0.4-0.20190822160303-7cf00da31834 h1:/3sPFOOucmMMFr+UEHO7vFcLahcWGrgMo8vybSwwVno=
+github.com/MichaelMure/go-ipfs-config v0.0.4-0.20190822160303-7cf00da31834/go.mod h1:KDbHjNyg4e6LLQSQpkgQMBz6Jf4LXiWAcmnkcwmH0DU=
 github.com/OneOfOne/xxhash v1.2.2/go.mod h1:HSdplMjZKSmBqAxg5vPj2TmRDmfkzw+cTzAElWljhcU=
 github.com/OpenPeeDeeP/depguard v0.0.0-20180806142446-a69c782687b2 h1:HTOmFEEYrWi4MW5ZKUx6xfeyM10Sx3kQF65xiQJMPYA=
 github.com/OpenPeeDeeP/depguard v0.0.0-20180806142446-a69c782687b2/go.mod h1:7/4sitnI9YlQgTLLk734QlzXT8DuHVnAyztLplQjk+o=

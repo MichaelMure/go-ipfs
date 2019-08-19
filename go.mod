@@ -128,3 +128,5 @@ require (
 )
 
 go 1.12
+
+replace github.com/ipfs/go-ipfs-config => github.com/MichaelMure/go-ipfs-config v0.0.4-0.20190822160303-7cf00da31834

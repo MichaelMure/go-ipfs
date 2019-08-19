@@ -54,7 +54,7 @@ func BaseBlockstoreCtor(cacheOpts blockstore.CacheOpts, nilRepo bool, hashOnRead
 		bs = blockstore.NewBlockstore(rds)
 		bs = &verifbs.VerifBS{Blockstore: bs}
 
-		if !nilRepo {
+		if !nilRepo && (cacheOpts.HasBloomFilterSize > 0 || cacheOpts.HasARCCacheSize > 0) {
 			ctx, cancel := context.WithCancel(mctx)
 
 			lc.Append(fx.Hook{
