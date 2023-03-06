@@ -6,11 +6,13 @@ import (
 	"io"
 
 	cid "github.com/ipfs/go-cid"
+	pin "github.com/ipfs/go-ipfs-pinner"
 	ipld "github.com/ipfs/go-ipld-format"
 	ipldlegacy "github.com/ipfs/go-ipld-legacy"
 	"github.com/ipfs/go-libipfs/files"
 	iface "github.com/ipfs/interface-go-ipfs-core"
 	"github.com/ipfs/interface-go-ipfs-core/options"
+
 	"github.com/ipfs/kubo/core/commands/cmdenv"
 	"github.com/ipfs/kubo/core/commands/cmdutils"
 
@@ -19,7 +21,6 @@ import (
 )
 
 func dagImport(req *cmds.Request, res cmds.ResponseEmitter, env cmds.Environment) error {
-
 	node, err := cmdenv.GetNode(env)
 	if err != nil {
 		return err
@@ -70,6 +71,10 @@ func dagImport(req *cmds.Request, res cmds.ResponseEmitter, env cmds.Environment
 
 		var failedPins int
 		for c := range roots {
+			ret := RootMeta{Cid: c}
+
+			err = node.Pinning.Pin(req.Context, c, pin.Recursive)
+			ret.PinErrorMsg = err.Error()
 
 			// We need to re-retrieve a block, convert it to ipld, and feed it
 			// to the Pinning interface, sigh...

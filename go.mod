@@ -112,6 +112,8 @@ require (
 	golang.org/x/sys v0.5.0
 )
 
+replace github.com/ipfs/go-ipfs-pinner => ../go-ipfs-pinner
+
 require (
 	github.com/AndreasBriese/bbloom v0.0.0-20190825152654-46b345b51c96 // indirect
 	github.com/Kubuxu/go-os-helper v0.0.1 // indirect

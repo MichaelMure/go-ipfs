@@ -12,9 +12,10 @@ import (
 	coreiface "github.com/ipfs/interface-go-ipfs-core"
 	caopts "github.com/ipfs/interface-go-ipfs-core/options"
 	"github.com/ipfs/interface-go-ipfs-core/path"
-	"github.com/ipfs/kubo/tracing"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/ipfs/kubo/tracing"
 )
 
 type PinAPI CoreAPI
@@ -23,10 +24,10 @@ func (api *PinAPI) Add(ctx context.Context, p path.Path, opts ...caopts.PinAddOp
 	ctx, span := tracing.Span(ctx, "CoreAPI.PinAPI", "Add", trace.WithAttributes(attribute.String("path", p.String())))
 	defer span.End()
 
-	dagNode, err := api.core().ResolveNode(ctx, p)
-	if err != nil {
-		return fmt.Errorf("pin: %s", err)
-	}
+	// dagNode, err := api.core().ResolveNode(ctx, p)
+	// if err != nil {
+	// 	return fmt.Errorf("pin: %s", err)
+	// }
 
 	settings, err := caopts.PinAddOptions(opts...)
 	if err != nil {
@@ -35,9 +36,23 @@ func (api *PinAPI) Add(ctx context.Context, p path.Path, opts ...caopts.PinAddOp
 
 	span.SetAttributes(attribute.Bool("recursive", settings.Recursive))
 
-	defer api.blockstore.PinLock(ctx).Unlock(ctx)
+	// defer api.blockstore.PinLock(ctx).Unlock(ctx)
 
-	err = api.pinning.Pin(ctx, dagNode, settings.Recursive)
+	// mode := pin.Direct
+	// if settings.Recursive {
+	// 	mode = pin.Recursive
+	// 	err = merkledag.FetchGraph(ctx, dagNode.Cid(), api.dag)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	if syncDServ, ok := api.dag.(interface{ Sync() error }); ok {
+	// 		if err := syncDServ.Sync(); err != nil {
+	// 			return fmt.Errorf("cannot sync pinned data: %v", err)
+	// 		}
+	// 	}
+	// }
+
+	err = api.pinning.Pin(ctx, dagNode.Cid(), mode)
 	if err != nil {
 		return fmt.Errorf("pin: %s", err)
 	}
